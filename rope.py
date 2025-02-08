@@ -2,6 +2,14 @@ from typing import Tuple
 import torch
 
 def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
+    ndim = x.ndim
+    assert 0 <= 1 < ndim
+    assert freqs_cis.shape == (x.shape[1], x.shape[-1])
+    shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
+    return freqs_cis.view(shape)
+
+
+def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
     """
     Helper function to reshape frequency tensor to have the same shape as the target tensor 'x'
     for the purpose of broadcasting the frequency tensor during element-wise operations.
@@ -67,9 +75,35 @@ def apply_rotary_emb(
     # Then, combine these trigonometric values with the tensors query_real, query_imag,
     # key_real, and key_imag.
 
-    raise NotImplementedError
+    # Compute theta_i for each dimension
+    d = head_dim
+    i = torch.arange(0, d // 2, dtype=torch.float32, device=device)
+    theta_i = theta ** (-2 * i / d)
 
-    query_out = None
-    key_out = None
+    # Generate positions up to max_seq_len and compute frequencies
+    m = torch.arange(max_seq_len, dtype=torch.float32, device=device)
+    freqs = m.unsqueeze(-1) * theta_i.unsqueeze(0)  # (max_seq_len, d//2)
+    freqs = freqs[:seqlen]  # (seqlen, d//2)
+
+    # Compute cos and sin values
+    cos = torch.cos(freqs)
+    sin = torch.sin(freqs)
+
+    # Reshape for broadcasting with query and key
+    cos_q = reshape_for_broadcast(cos, query_real)
+    sin_q = reshape_for_broadcast(sin, query_real)
+    cos_k = reshape_for_broadcast(cos, key_real)
+    sin_k = reshape_for_broadcast(sin, key_real)
+
+    # Apply rotation to real and imaginary parts
+    query_rotated_real = query_real * cos_q - query_imag * sin_q
+    query_rotated_imag = query_real * sin_q + query_imag * cos_q
+    key_rotated_real = key_real * cos_k - key_imag * sin_k
+    key_rotated_imag = key_real * sin_k + key_imag * cos_k
+
+    # Combine back to original shape and cast to original dtype
+    original_dtype = query.dtype
+    query_out = torch.stack([query_rotated_real, query_rotated_imag], dim=-1).flatten(-2, -1).to(original_dtype)
+    key_out = torch.stack([key_rotated_real, key_rotated_imag], dim=-1).flatten(-2, -1).to(original_dtype)
     # Return the rotary position embeddings for the query and key tensors
     return query_out, key_out
