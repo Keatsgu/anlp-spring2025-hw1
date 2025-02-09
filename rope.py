@@ -4,9 +4,24 @@ import torch
 # Helper function to reshape the frequency tensor for broadcasting  with the input tensor
 def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
     ndim = x.ndim
-    assert 0 <= 1 < ndim
-    assert freqs_cis.shape == (x.shape[1], x.shape[-1])
-    shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
+
+    # Verify that x has at least 2 dimensions.
+    assert 0 <= 1 < ndim, "x must have at least 2 dimensions."
+
+    # Ensure that freqs_cis has the shape (x.shape[1], x.shape[-1]).
+    assert freqs_cis.shape == (x.shape[1], x.shape[-1]), (
+        f"freqs_cis must have shape ({x.shape[1]}, {x.shape[-1]}), "
+        f"but got {freqs_cis.shape}."
+    )
+
+    # Keep the second and last dimensions, set others to 1
+    shape = []
+    for i, d in enumerate(x.shape):
+        if i == 1 or i == ndim - 1:
+            shape.append(d)
+        else:
+            shape.append(1)
+
     return freqs_cis.view(shape)
 
 
